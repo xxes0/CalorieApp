@@ -8,7 +8,7 @@ source.include_exts = py,png,jpg,jpeg,kv,atlas,tflite,json,db
 
 version = 1.0.0
 
-requirements = python3,kivy==2.3.1,kivymd==1.2.0,pillow,numpy,plyer,pyjnius
+requirements = python3,kivy==2.3.1,kivymd==1.2.0,pillow,numpy,plyer,pyjnius,
 
 orientation = portrait
 fullscreen = 0
