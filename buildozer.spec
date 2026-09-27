@@ -20,10 +20,9 @@ android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 
 # --- ДОБАВЛЕННЫЕ СТРОКИ ---
-android.sdk = 30
 android.build_tools = 30.0.3
 android.accept_sdk_license = True
-android.ndk = 23b
+android.ndk = 28.2.13676358
 # ---------------------------
 
 [buildozer]
