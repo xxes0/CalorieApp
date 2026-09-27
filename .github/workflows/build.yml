@@ -3,10 +3,11 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # <--- ИЗМЕНЕНО ЗДЕСЬ
+    runs-on: ubuntu-22.04
 
     steps:
     - name: Checkout code
@@ -25,7 +26,23 @@ jobs:
     - name: Install Buildozer
       run: |
         pip install --upgrade pip
-        pip install buildozer cython==0.29.36
+        pip install buildozer cython
+
+    - name: Cache Buildozer global directory
+      uses: actions/cache@v4
+      with:
+        path: ~/.buildozer
+        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          buildozer-global-
+
+    - name: Cache Buildozer project directory
+      uses: actions/cache@v4
+      with:
+        path: .buildozer
+        key: buildozer-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          buildozer-
 
     - name: Build with Buildozer
       run: |
