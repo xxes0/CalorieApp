@@ -19,6 +19,12 @@ android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 
+# --- ДОБАВЛЕННЫЕ СТРОКИ ---
+android.sdk = 30
+android.build_tools = 30.0.3
+android.accept_sdk_license = True
+# ---------------------------
+
 [buildozer]
 log_level = 2
 warn_on_root = 1
