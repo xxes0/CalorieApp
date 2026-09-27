@@ -22,7 +22,7 @@ android.allow_backup = True
 # --- ДОБАВЛЕННЫЕ СТРОКИ ---
 android.build_tools = 30.0.3
 android.accept_sdk_license = True
-android.ndk = 28.2.13676358
+android.ndk = 28c
 # ---------------------------
 
 [buildozer]
