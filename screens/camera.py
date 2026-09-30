@@ -11,6 +11,8 @@ import vision
 import foods_data
 from database import save_photo_record
 
+IS_ANDROID = (platform == "android")
+
 IMAGE_EXTENSIONS = [
     "*.jpg", "*.jpeg", "*.jpe", "*.jfif",
     "*.png", "*.gif", "*.bmp", "*.webp",
@@ -24,7 +26,6 @@ TK_FILETYPES = [
     ("JPEG", "*.jpg *.jpeg *.jpe *.jfif"),
     ("PNG", "*.png"),
     ("WebP", "*.webp"),
-    ("HEIC / HEIF", "*.heic *.heif"),
     ("Все файлы", "*.*"),
 ]
 
@@ -54,7 +55,7 @@ KV = """
 
                 MDCard:
                     size_hint_y: None
-                    height: "280dp"
+                    height: "240dp"
                     radius: [28, ]
                     elevation: 0
                     md_bg_color: 1, 1, 1, 1
@@ -85,6 +86,17 @@ KV = """
                         text_color: 0.15, 0.15, 0.15, 1
                         on_release: root.pick_from_gallery()
 
+                MDFillRoundFlatIconButton:
+                    id: btn_list
+                    text: "ВЫБРАТЬ БЛЮДО ИЗ СПИСКА"
+                    icon: "food-variant"
+                    pos_hint: {"center_x": .5}
+                    size_hint_x: None
+                    width: "290dp"
+                    md_bg_color: 0.13, 0.42, 0.83, 1
+                    text_color: 1, 1, 1, 1
+                    on_release: root.open_food_menu(self)
+
                 MDCard:
                     orientation: "vertical"
                     padding: "20dp"
@@ -96,7 +108,7 @@ KV = """
                     md_bg_color: 1, 1, 1, 1
 
                     MDLabel:
-                        text: "РАСПОЗНАНО"
+                        text: "РЕЗУЛЬТАТ"
                         theme_text_color: "Hint"
                         font_style: "Overline"
                         bold: True
@@ -105,7 +117,7 @@ KV = """
 
                     MDLabel:
                         id: r_recognized
-                        text: "Наведи камеру на блюдо"
+                        text: "Выберите фото или блюдо"
                         halign: "center"
                         font_style: "H5"
                         bold: True
@@ -116,7 +128,7 @@ KV = """
 
                     MDLabel:
                         id: r_kcal100
-                        text: "Калорийность появится здесь"
+                        text: ""
                         halign: "center"
                         theme_text_color: "Hint"
                         font_style: "Body2"
@@ -207,10 +219,11 @@ class CameraScreen(MDScreen):
         self._recognized = None
         self._kcal100 = None
         self._camera_bound = False
+        self._food_menu = None
 
     # ---------- КАМЕРА ----------
     def take_shot(self):
-        if platform != "android":
+        if not IS_ANDROID:
             self.pick_from_gallery()
             return
 
@@ -282,7 +295,7 @@ class CameraScreen(MDScreen):
 
     # ---------- ГАЛЕРЕЯ ----------
     def pick_from_gallery(self):
-        if platform == "android":
+        if IS_ANDROID:
             from android.permissions import request_permissions, Permission
             request_permissions(
                 [Permission.READ_EXTERNAL_STORAGE,
@@ -320,7 +333,44 @@ class CameraScreen(MDScreen):
             msg = str(exc)
             Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
 
-    # ---------- ОБРАБОТКА ----------
+    # ---------- МЕНЮ ВЫБОРА БЛЮДА (для Android) ----------
+    def open_food_menu(self, caller):
+        from kivymd.uix.menu import MDDropdownMenu
+        from kivy.metrics import dp
+
+        food_names = sorted(foods_data.FOODS.keys())
+        items = [
+            {
+                "viewclass": "OneLineListItem",
+                "text": name,
+                "height": dp(48),
+                "on_release": lambda x=name: self._on_food_picked(x),
+            }
+            for name in food_names
+        ]
+        self._food_menu = MDDropdownMenu(
+            caller=caller,
+            items=items,
+            width_mult=5,
+        )
+        self._food_menu.open()
+
+    def _on_food_picked(self, name):
+        if self._food_menu:
+            self._food_menu.dismiss()
+            self._food_menu = None
+        matched, kcal100 = foods_data.find_kcal(name)
+        self._recognized = matched or name
+        self._kcal100 = kcal100
+        self.ids.r_recognized.text = self._recognized
+        if kcal100:
+            self.ids.r_kcal100.text = f"≈ {kcal100} ккал на 100 г"
+            self._recalc()
+        else:
+            self.ids.r_kcal100.text = "Нет в справочнике"
+            self.ids.r_total.text = "—"
+
+    # ---------- ОБРАБОТКА ФОТО ----------
     def _process(self, path):
         try:
             vision.open_image_any(path)
@@ -332,6 +382,13 @@ class CameraScreen(MDScreen):
         self.ids.preview.source = path
         self.ids.preview.reload()
 
+        # На Windows пытаемся распознать, на Android — предлагаем выбрать
+        if IS_ANDROID:
+            toast("Фото загружено. Нажми «Выбрать блюдо из списка»")
+            self.ids.r_recognized.text = "Выберите блюдо вручную"
+            self.ids.r_kcal100.text = "На Android используется ручной выбор"
+            return
+
         toast("Распознаём…")
         Clock.schedule_once(lambda dt: self._recognize(path), 0.1)
 
@@ -342,8 +399,7 @@ class CameraScreen(MDScreen):
             toast(str(exc))
             return
         except Exception as exc:
-            msg = str(exc)
-            toast(f"Ошибка: {msg}")
+            toast(f"Ошибка: {exc}")
             return
 
         matched, kcal100 = foods_data.find_kcal(name)
@@ -370,10 +426,11 @@ class CameraScreen(MDScreen):
 
     def save_result(self):
         if not self._recognized or not self._kcal100:
-            toast("Сначала распознайте фото")
+            toast("Сначала выберите блюдо или распознайте фото")
             return
         grams = int(self.ids.grams.value)
         total = round(self._kcal100 * grams / 100)
-        save_photo_record(self._photo_path, self._recognized,
+        save_photo_record(self._photo_path or "manual",
+                          self._recognized,
                           self._recognized, grams, total)
         toast(f"Сохранено: {total} ккал")
