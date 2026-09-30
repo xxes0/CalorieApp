@@ -210,17 +210,29 @@ class CameraScreen(MDScreen):
         self._recognized = None
         self._kcal100 = None
 
-    def take_shot(self):
+        def take_shot(self):
         if platform != "android":
             self.pick_from_gallery()
             return
 
-        # Разрешения
         from android.permissions import request_permissions, Permission
-        request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
 
+        def on_permissions(permissions, grants):
+            if all(grants):
+                # Разрешения даны — открываем камеру с задержкой,
+                # чтобы Android успел закрыть диалог
+                Clock.schedule_once(lambda dt: self._open_camera(), 0.7)
+            else:
+                Clock.schedule_once(
+                    lambda dt: toast("Нужно разрешить камеру и файлы"))
+
+        request_permissions(
+            [Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE],
+            on_permissions)
+
+    def _open_camera(self):
         try:
-            from jnius import autoclass, cast
+            from jnius import autoclass
             from android import activity
 
             Intent = autoclass('android.content.Intent')
@@ -229,7 +241,51 @@ class CameraScreen(MDScreen):
 
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             current_activity = PythonActivity.mActivity
+
+            # Отвязываем прошлый listener, если был
+            try:
+                activity.unbind(on_activity_result=self._on_camera_result)
+            except Exception:
+                pass
+
+            # Сохраняем callback на экране, чтобы можно было отвязать
+            self._on_camera_result = self._make_camera_callback(activity)
+            activity.bind(on_activity_result=self._on_camera_result)
+
             current_activity.startActivityForResult(intent, 1001)
+        except Exception as exc:
+            toast(f"Камера недоступна: {exc}")
+
+    def _make_camera_callback(self, activity_module):
+        def on_activity_result(request_code, result_code, data):
+            if request_code != 1001:
+                return
+            try:
+                if data is None:
+                    Clock.schedule_once(lambda dt: toast("Снимок отменён"))
+                    return
+                extras = data.getExtras()
+                bitmap = extras.get("data") if extras else None
+                if bitmap is None:
+                    Clock.schedule_once(lambda dt: toast("Пустой снимок"))
+                    return
+
+                from jnius import autoclass
+                FileOutputStream = autoclass('java.io.FileOutputStream')
+                CompressFormat = autoclass(
+                    'android.graphics.Bitmap$CompressFormat')
+
+                path = os.path.join(tempfile.gettempdir(), "food_shot.jpg")
+                stream = FileOutputStream(path)
+                bitmap.compress(CompressFormat.JPEG, 85, stream)
+                stream.flush()
+                stream.close()
+
+                Clock.schedule_once(lambda dt: self._process(path))
+            except Exception as exc:
+                msg = str(exc)
+                Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
+        return on_activity_result
 
             # Слушаем результат
             def on_activity_result(request_code, result_code, data):
