@@ -114,8 +114,14 @@ def open_image_any(path: str) -> Image.Image:
 
 
 def recognize_food(image_path: str) -> str:
-    _load()
+    # На Android распознавание не поддерживается без TFLite
+    if platform == "android":
+        raise VisionError(
+            "Распознавание по фото доступно только в Windows-версии.\n"
+            "На Android TFLite требует отдельной сборки."
+        )
 
+    _load()
     img = open_image_any(image_path)
     img = img.resize(_input_size)
 
