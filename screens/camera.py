@@ -52,7 +52,6 @@ KV = """
                 size_hint_y: None
                 height: self.minimum_height
 
-                # ==== ПРЕВЬЮ ====
                 MDCard:
                     size_hint_y: None
                     height: "280dp"
@@ -65,7 +64,6 @@ KV = """
                         source: ""
                         fit_mode: "contain"
 
-                # ==== КНОПКИ ====
                 MDBoxLayout:
                     size_hint_y: None
                     height: "48dp"
@@ -87,7 +85,6 @@ KV = """
                         text_color: 0.15, 0.15, 0.15, 1
                         on_release: root.pick_from_gallery()
 
-                # ==== РЕЗУЛЬТАТ ====
                 MDCard:
                     orientation: "vertical"
                     padding: "20dp"
@@ -99,7 +96,7 @@ KV = """
                     md_bg_color: 1, 1, 1, 1
 
                     MDLabel:
-                        text: "🍽  РАСПОЗНАНО"
+                        text: "РАСПОЗНАНО"
                         theme_text_color: "Hint"
                         font_style: "Overline"
                         bold: True
@@ -209,8 +206,10 @@ class CameraScreen(MDScreen):
         self._photo_path = None
         self._recognized = None
         self._kcal100 = None
+        self._camera_bound = False
 
-        def take_shot(self):
+    # ---------- КАМЕРА ----------
+    def take_shot(self):
         if platform != "android":
             self.pick_from_gallery()
             return
@@ -219,8 +218,6 @@ class CameraScreen(MDScreen):
 
         def on_permissions(permissions, grants):
             if all(grants):
-                # Разрешения даны — открываем камеру с задержкой,
-                # чтобы Android успел закрыть диалог
                 Clock.schedule_once(lambda dt: self._open_camera(), 0.7)
             else:
                 Clock.schedule_once(
@@ -242,73 +239,27 @@ class CameraScreen(MDScreen):
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             current_activity = PythonActivity.mActivity
 
-            # Отвязываем прошлый listener, если был
-            try:
-                activity.unbind(on_activity_result=self._on_camera_result)
-            except Exception:
-                pass
-
-            # Сохраняем callback на экране, чтобы можно было отвязать
-            self._on_camera_result = self._make_camera_callback(activity)
-            activity.bind(on_activity_result=self._on_camera_result)
-
-            current_activity.startActivityForResult(intent, 1001)
-        except Exception as exc:
-            toast(f"Камера недоступна: {exc}")
-
-    def _make_camera_callback(self, activity_module):
-        def on_activity_result(request_code, result_code, data):
-            if request_code != 1001:
-                return
-            try:
-                if data is None:
-                    Clock.schedule_once(lambda dt: toast("Снимок отменён"))
-                    return
-                extras = data.getExtras()
-                bitmap = extras.get("data") if extras else None
-                if bitmap is None:
-                    Clock.schedule_once(lambda dt: toast("Пустой снимок"))
-                    return
-
-                from jnius import autoclass
-                FileOutputStream = autoclass('java.io.FileOutputStream')
-                CompressFormat = autoclass(
-                    'android.graphics.Bitmap$CompressFormat')
-
-                path = os.path.join(tempfile.gettempdir(), "food_shot.jpg")
-                stream = FileOutputStream(path)
-                bitmap.compress(CompressFormat.JPEG, 85, stream)
-                stream.flush()
-                stream.close()
-
-                Clock.schedule_once(lambda dt: self._process(path))
-            except Exception as exc:
-                msg = str(exc)
-                Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
-        return on_activity_result
-
-            # Слушаем результат
-            def on_activity_result(request_code, result_code, data):
+            def on_result(request_code, result_code, data):
                 if request_code != 1001:
                     return
                 try:
                     if data is None:
-                        toast("Снимок отменён")
+                        Clock.schedule_once(
+                            lambda dt: toast("Снимок отменён"))
                         return
                     extras = data.getExtras()
-                    bitmap = extras.get("data")
+                    bitmap = extras.get("data") if extras else None
                     if bitmap is None:
-                        toast("Не удалось получить снимок")
+                        Clock.schedule_once(
+                            lambda dt: toast("Пустой снимок"))
                         return
 
-                    # Сохраняем bitmap в файл
-                    import tempfile
-                    from jnius import cast
                     FileOutputStream = autoclass('java.io.FileOutputStream')
-                    Bitmap = autoclass('android.graphics.Bitmap')
-                    CompressFormat = autoclass('android.graphics.Bitmap$CompressFormat')
+                    CompressFormat = autoclass(
+                        'android.graphics.Bitmap$CompressFormat')
 
-                    path = os.path.join(tempfile.gettempdir(), "food_shot.jpg")
+                    path = os.path.join(
+                        tempfile.gettempdir(), "food_shot.jpg")
                     stream = FileOutputStream(path)
                     bitmap.compress(CompressFormat.JPEG, 85, stream)
                     stream.flush()
@@ -317,26 +268,25 @@ class CameraScreen(MDScreen):
                     Clock.schedule_once(lambda dt: self._process(path))
                 except Exception as exc:
                     msg = str(exc)
-                    Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
+                    Clock.schedule_once(
+                        lambda dt: toast(f"Ошибка: {msg}"))
 
-            activity.bind(on_activity_result=on_activity_result)
+            if not self._camera_bound:
+                activity.bind(on_activity_result=on_result)
+                self._camera_bound = True
 
+            current_activity.startActivityForResult(intent, 1001)
         except Exception as exc:
-            toast(f"Камера недоступна: {exc}")
-        else:
-            self.pick_from_gallery()
+            msg = str(exc)
+            toast(f"Камера недоступна: {msg}")
 
-    def _on_shot(self, path):
-        if not path:
-            toast("Снимок не сделан")
-            return
-        Clock.schedule_once(lambda dt: self._process(path))
-
+    # ---------- ГАЛЕРЕЯ ----------
     def pick_from_gallery(self):
         if platform == "android":
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.READ_EXTERNAL_STORAGE,
-                                 Permission.READ_MEDIA_IMAGES])
+            request_permissions(
+                [Permission.READ_EXTERNAL_STORAGE,
+                 Permission.READ_MEDIA_IMAGES])
             try:
                 from plyer import filechooser
                 filechooser.open_file(
@@ -370,13 +320,18 @@ class CameraScreen(MDScreen):
             msg = str(exc)
             Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
 
+    # ---------- ОБРАБОТКА ----------
     def _process(self, path):
-        # Показываем картинку в любом случае
+        try:
+            vision.open_image_any(path)
+        except vision.VisionError as exc:
+            toast(str(exc))
+            return
+
         self._photo_path = path
         self.ids.preview.source = path
         self.ids.preview.reload()
 
-        # Пытаемся распознать — если не получится, покажем ошибку
         toast("Распознаём…")
         Clock.schedule_once(lambda dt: self._recognize(path), 0.1)
 
@@ -387,7 +342,8 @@ class CameraScreen(MDScreen):
             toast(str(exc))
             return
         except Exception as exc:
-            toast(f"Ошибка: {exc}")
+            msg = str(exc)
+            toast(f"Ошибка: {msg}")
             return
 
         matched, kcal100 = foods_data.find_kcal(name)
@@ -421,10 +377,3 @@ class CameraScreen(MDScreen):
         save_photo_record(self._photo_path, self._recognized,
                           self._recognized, grams, total)
         toast(f"Сохранено: {total} ккал")
-
-        # Обновить экран истории сразу
-        try:
-            from kivy.app import App
-            App.get_running_app().refresh_history()
-        except Exception:
-            pass
