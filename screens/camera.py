@@ -315,16 +315,12 @@ class CameraScreen(MDScreen):
             Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
 
     def _process(self, path):
-        try:
-            vision.open_image_any(path)
-        except vision.VisionError as exc:
-            toast(str(exc))
-            return
-
+        # Показываем картинку в любом случае
         self._photo_path = path
         self.ids.preview.source = path
         self.ids.preview.reload()
 
+        # Пытаемся распознать — если не получится, покажем ошибку
         toast("Распознаём…")
         Clock.schedule_once(lambda dt: self._recognize(path), 0.1)
 
