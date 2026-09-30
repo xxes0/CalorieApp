@@ -211,16 +211,62 @@ class CameraScreen(MDScreen):
         self._kcal100 = None
 
     def take_shot(self):
-        if platform == "android":
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA,
-                                 Permission.WRITE_EXTERNAL_STORAGE])
-            try:
-                from plyer import camera
-                filename = os.path.join(tempfile.gettempdir(), "food_shot.jpg")
-                camera.take_picture(filename=filename, on_complete=self._on_shot)
-            except Exception as exc:
-                toast(f"Камера недоступна: {exc}")
+        if platform != "android":
+            self.pick_from_gallery()
+            return
+
+        # Разрешения
+        from android.permissions import request_permissions, Permission
+        request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
+
+        try:
+            from jnius import autoclass, cast
+            from android import activity
+
+            Intent = autoclass('android.content.Intent')
+            MediaStore = autoclass('android.provider.MediaStore')
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+
+            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            current_activity = PythonActivity.mActivity
+            current_activity.startActivityForResult(intent, 1001)
+
+            # Слушаем результат
+            def on_activity_result(request_code, result_code, data):
+                if request_code != 1001:
+                    return
+                try:
+                    if data is None:
+                        toast("Снимок отменён")
+                        return
+                    extras = data.getExtras()
+                    bitmap = extras.get("data")
+                    if bitmap is None:
+                        toast("Не удалось получить снимок")
+                        return
+
+                    # Сохраняем bitmap в файл
+                    import tempfile
+                    from jnius import cast
+                    FileOutputStream = autoclass('java.io.FileOutputStream')
+                    Bitmap = autoclass('android.graphics.Bitmap')
+                    CompressFormat = autoclass('android.graphics.Bitmap$CompressFormat')
+
+                    path = os.path.join(tempfile.gettempdir(), "food_shot.jpg")
+                    stream = FileOutputStream(path)
+                    bitmap.compress(CompressFormat.JPEG, 85, stream)
+                    stream.flush()
+                    stream.close()
+
+                    Clock.schedule_once(lambda dt: self._process(path))
+                except Exception as exc:
+                    msg = str(exc)
+                    Clock.schedule_once(lambda dt: toast(f"Ошибка: {msg}"))
+
+            activity.bind(on_activity_result=on_activity_result)
+
+        except Exception as exc:
+            toast(f"Камера недоступна: {exc}")
         else:
             self.pick_from_gallery()
 
